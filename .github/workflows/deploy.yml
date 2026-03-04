@@ -1,0 +1,74 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      packages: write
+
+
+    
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.12"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Test with pytest
+      run: |
+        pytest
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: "pedrohmm1"
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: pedrohmm1/app_users-ci:${{ github.sha }}
+    - name: executing remote ssh commands using password
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HOST_TEST }}
+        username: "ubuntu"
+        key: ${{ secrets.KEY_TEST }}
+        port: 22
+        script: |
+          docker stop app_users
+          docker rm --force app_users
+          docker run  -d -p 80:5001 -e POSTGRES_URL = ${{ secrets.POSTGRES_URL}} -e POSTGRES_USERS = ${{ secrets.POSTGRES_USERS}} -e POSTGRES_PASSWORD = ${{ secrets.POSTGRES_PASSWORD}} --network=rede --name app_users pedrohmm1/app_users-ci:${{ github.sha }}
+          
+          
+
+
