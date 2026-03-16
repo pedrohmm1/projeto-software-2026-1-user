@@ -1,17 +1,31 @@
 from flask import Flask, request, jsonify
 from db import db
 from models import User
-import os
-
-postgres_user = os.environ.get('POSTGRES_USER', 'appuser')
-postgres_password = os.environ.get('POSTGRES_PASSWORD', 'apppass')
-postgres_url = os.environ.get('POSTGRES_URL', 'localhost')
+import redis
+import json
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql://{postgres_user}:{postgres_password}@{postgres_url}:5432/users"
+app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://appuser:apppass@localhost:5432/users"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
+
+redis_client = redis.Redis(
+    host="localhost",
+    port=6379,
+    decode_responses=True
+)
+
+def send_event(event_type, description):
+    event = {
+        "id": None,
+        "type": event_type,
+        "description": description,
+        "source": "USERS_API",
+        "date": None
+    }
+
+    redis_client.rpush("events-queue", json.dumps(event))
 
 @app.route("/users", methods=["POST"])
 def create_user():
@@ -24,6 +38,8 @@ def create_user():
 
     db.session.add(user)
     db.session.commit()
+
+    send_event("CREATE_USER", f"User {user.name} created")
 
     return jsonify({
         "id": str(user.id),
@@ -39,7 +55,7 @@ def get_user(user_id):
         "id": str(user.id),
         "name": user.name,
         "email": user.email
-    }), 201
+    }), 200
 
 @app.route("/users/<uuid:user_id>", methods=["DELETE"])
 def delete_user(user_id):
@@ -48,20 +64,24 @@ def delete_user(user_id):
     db.session.delete(user)
     db.session.commit()
 
+    send_event("DELETE_USER", f"User {user.id} deleted")
+
     return "", 204
 
 @app.route("/users", methods=["GET"])
 def list_users():
     users = User.query.all()
 
-    return [
+    send_event("LIST_USER", "List all users")
+
+    return jsonify([
         {
             "id": str(user.id),
             "name": user.name,
             "email": user.email
         }
         for user in users
-    ], 200
+    ]), 200
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
