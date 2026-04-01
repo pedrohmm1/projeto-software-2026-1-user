@@ -72,3 +72,20 @@ docker push {nome_usuario_docker_hub}/app_users
 ```
 
 6 - Executar na máquina da AWS o `docker run`. Lembre que a porta 5000 está bloqueada na AWS, tente usar a porta 80 -> 80:5000
+
+## Exercício
+
+Na rota de cadastro de usuário, deve ser adicionado o campo CEP e número da cada, com o CEP, deve ser feita uma consulta na API:
+
+https://viacep.com.br/ws/{cep}/json/
+
+No banco de dados deve ser salvo o endereço completo do usuário com os campos cep, logradouro,  bairro, localidade e cidade. Além do número que foi enviado pelo usuário.
+
+```python
+python3 -m pytest
+```
+
+
+``` python
+python3 -m pytest --cov=main --cov-report=term-missing -s
+```

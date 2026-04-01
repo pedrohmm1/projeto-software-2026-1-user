@@ -1,109 +1,77 @@
 from flask import Flask, request, jsonify
 from db import db
 from models import User
-import redis
-import json
 import os
 
-app = Flask(__name__)
-
-# ✅ DATABASE (usa variável de ambiente ou fallback correto)
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL",
-    "postgresql://appuser:apppass@postgres-users:5432/users"
-)
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-db.init_app(app)
-
-# ✅ REDIS (usa variável de ambiente)
-redis_client = redis.Redis(
-    host=os.getenv("REDIS_HOST", "redis-2"),
-    port=int(os.getenv("REDIS_PORT", 6379)),
-    decode_responses=True
-)
-
-def send_event(event_type, description):
-    event = {
-        "id": None,
-        "type": event_type,
-        "description": description,
-        "source": "USERS_API",
-        "date": None
-    }
-
-    try:
-        redis_client.rpush("events-queue", json.dumps(event))
-    except Exception as e:
-        print("Erro ao enviar evento:", e)
+def create_app():
+    app = Flask(__name__)
+    
+    postgres_user = os.environ.get('POSTGRES_USER', 'appuser')
+    postgres_password = os.environ.get('POSTGRES_PASSWORD', 'apppass')
+    postgres_url = os.environ.get('POSTGRES_URL', 'localhost')
+    
+    # Define o padrão, mas permite que o Pytest sobrescreva depois
+    db_uri = f"postgresql://{postgres_user}:{postgres_password}@{postgres_url}:5432/users"
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("SQLALCHEMY_DATABASE_URI", db_uri)
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    
+    db.init_app(app)
 
 
-@app.route("/users", methods=["POST"])
-def create_user():
-    data = request.json
+    @app.route("/users", methods=["POST"])
+    def create_user():
+        data = request.json
 
-    user = User(
-        name=data["name"],
-        email=data["email"]
-    )
+        user = User(
+            name=data["name"],
+            email=data["email"]
+        )
 
-    db.session.add(user)
-    db.session.commit()
+        db.session.add(user)
+        db.session.commit()
 
-    send_event("CREATE_USER", f"User {user.name} created")
-
-    return jsonify({
-        "id": str(user.id),
-        "name": user.name,
-        "email": user.email
-    }), 201
-
-
-# 🔥 IMPORTANTE: removi o <uuid:...> (evita erro de conversão)
-@app.route("/users/<user_id>", methods=["GET"])
-def get_user(user_id):
-    user = User.query.filter_by(id=user_id).first()
-
-    if not user:
-        return jsonify({"erro": "Usuário não encontrado"}), 404
-
-    return jsonify({
-        "id": str(user.id),
-        "name": user.name,
-        "email": user.email
-    }), 200
-
-
-@app.route("/users/<user_id>", methods=["DELETE"])
-def delete_user(user_id):
-    user = User.query.filter_by(id=user_id).first()
-
-    if not user:
-        return jsonify({"erro": "Usuário não encontrado"}), 404
-
-    db.session.delete(user)
-    db.session.commit()
-
-    send_event("DELETE_USER", f"User {user.id} deleted")
-
-    return "", 204
-
-
-@app.route("/users", methods=["GET"])
-def list_users():
-    users = User.query.all()
-
-    send_event("LIST_USER", "List all users")
-
-    return jsonify([
-        {
+        return jsonify({
             "id": str(user.id),
             "name": user.name,
             "email": user.email
-        }
-        for user in users
-    ]), 200
+        }), 201
+
+    @app.route("/users/<uuid:user_id>", methods=["GET"])
+    def get_user(user_id):
+        user = User.query.get_or_404(user_id)
+
+        return jsonify({
+            "id": str(user.id),
+            "name": user.name,
+            "email": user.email
+        }), 200
+
+    @app.route("/users/<uuid:user_id>", methods=["DELETE"])
+    def delete_user(user_id):
+        user = User.query.get_or_404(user_id)
+
+        db.session.delete(user)
+        db.session.commit()
+
+        return "", 204
+
+    @app.route("/users", methods=["GET"])
+    def list_users():
+        users = User.query.all()
+
+        return [
+            {
+                "id": str(user.id),
+                "name": user.name,
+                "email": user.email
+            }
+            for user in users
+        ], 200
+
+    return app
+
+app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001)
+    app.run(debug=True, port=5000)
