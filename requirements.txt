@@ -1,7 +1,10 @@
 Flask==2.3.3
 Flask-SQLAlchemy==3.1.1
-redis 
+redis
 psycopg2-binary==2.9.10
-pytest 
-pytest-cov 
+pytest
+pytest-cov
 testcontainers
+PyJWT>=2.0.0
+cryptography
+flask-cors
